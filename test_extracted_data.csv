@@ -1,0 +1,3 @@
+invoice_id,amount,currency
+Invoice,1.0,VOI
+Invoice,500.0,VOI
