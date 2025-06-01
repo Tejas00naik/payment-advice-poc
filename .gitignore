@@ -22,6 +22,20 @@ logs/
 
 # Output files
 extracted_data.csv
+deepseek_extracted_data.csv
+
+# Intermediate LangChain outputs
+extracted_text.txt
+extracted_structure.json
+normalized_items.json
+
+# Old extraction outputs
+*_table_*.csv
+raw_data_from_pdf.csv
+raw_text_from_pdf.txt
+pdfplumber_*.txt
+hybrid_extracted_*.csv
+hybrid_extracted_*.txt
 
 # Jupyter Notebook
 .ipynb_checkpoints
