@@ -12,10 +12,17 @@ from dotenv import load_dotenv
 from typing import List, Optional, Dict, Any
 import signal
 
-# Import the new LangChain modules
-from pdf_processor import extract_pdf_data, extract_metadata
-from llm_processor import extract_table_structure, normalize_extracted_data
-from schema_processor import FINAL_COLUMNS, create_final_df
+# Import the core modules with proper handling for different import methods
+try:
+    # When run as a module
+    from .core.pdf_processor import extract_pdf_data, extract_metadata
+    from .core.llm_processor import extract_table_structure, normalize_extracted_data
+    from .core.schema_processor import FINAL_COLUMNS, create_final_df
+except ImportError:
+    # When run directly
+    from src.core.pdf_processor import extract_pdf_data, extract_metadata
+    from src.core.llm_processor import extract_table_structure, normalize_extracted_data
+    from src.core.schema_processor import FINAL_COLUMNS, create_final_df
 
 # Load environment variables
 load_dotenv()
@@ -95,18 +102,19 @@ def process_single_file(file_path: str, timeout: int = 300) -> pd.DataFrame:
     def timeout_handler(signum, frame):
         raise TimeoutError("LLM processing timed out")
     
-    # Extract table structure with timeout
-    logger.info(f"Extracting table structure with LLM (with {timeout}s timeout)...")
+    # Step 1: Extract table structure with timeout
+    logger.info(f"Step 1: Extracting table structure with LLM (with {timeout}s timeout)...")
     signal.signal(signal.SIGALRM, timeout_handler)
     signal.alarm(timeout)
     try:
-        extracted_structure = extract_table_structure(text_data)
+        # First step: Extract only the tables from the PDF text
+        table_data = extract_table_structure(text_data)
         signal.alarm(0)  # Cancel the alarm
         
-        # Save intermediate results
+        # Save intermediate table results
         with open("extracted_structure.json", "w") as f:
-            json.dump(extracted_structure, f, indent=2)
-        logger.info("Extracted structure saved to extracted_structure.json")
+            json.dump(table_data, f, indent=2)
+        logger.info("Extracted table structure saved to extracted_structure.json")
         
     except TimeoutError:
         signal.alarm(0)  # Cancel the alarm
@@ -117,12 +125,13 @@ def process_single_file(file_path: str, timeout: int = 300) -> pd.DataFrame:
         logger.error(f"Table extraction failed: {e}")
         return pd.DataFrame(columns=FINAL_COLUMNS)
     
-    # Normalize extracted data with timeout
-    logger.info("Normalizing extracted data (with 60s timeout)...")
+    # Step 2: Normalize data using both table structure and full text
+    logger.info("Step 2: Normalizing data with both table structure and full text (60s timeout)...")
     signal.signal(signal.SIGALRM, timeout_handler)
     signal.alarm(60)  # 60 second timeout for normalization
     try:
-        normalized_items = normalize_extracted_data(extracted_structure)
+        # Second step: Use both table data AND full text for normalization
+        normalized_items = normalize_extracted_data(table_data, text_data)
         signal.alarm(0)  # Cancel the alarm
         
         # Save normalized items
@@ -131,7 +140,7 @@ def process_single_file(file_path: str, timeout: int = 300) -> pd.DataFrame:
         logger.info("Normalized items saved to normalized_items.json")
         
         # Create DataFrame with final schema
-        df = create_final_df(normalized_items, metadata)
+        df = create_final_df(normalized_items, {})
         logger.info(f"Successfully extracted {len(df)} records")
         return df
         
