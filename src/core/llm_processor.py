@@ -339,12 +339,13 @@ def normalize_extracted_data(extracted_data: dict):
         missing_details = True
         if batch_results and all(isinstance(item, dict) for item in batch_results):
             for item_idx, item in enumerate(batch_results):
-                # Check for presence of key invoice-specific fields
-                has_invoice_number = 'Invoice number' in item and item['Invoice number'] is not None and str(item['Invoice number']).strip() != ""
+                # Check for presence of key fields based on our updated field structure
+                has_document_number = 'Document number' in item and item['Document number'] is not None and str(item['Document number']).strip() != ""
                 has_amount_settled = 'Amount settled' in item and item['Amount settled'] is not None
-                # logging.debug(f"  Item {item_idx} in batch: Invoice number present: {has_invoice_number}, Amount settled present: {has_amount_settled}")
-                # logging.debug(f"  Item {item_idx} content: {item}")
-                if has_invoice_number or has_amount_settled:
+                has_entry_type = 'Entry type' in item and item['Entry type'] is not None and str(item['Entry type']).strip() != ""
+                logging.debug(f"  Item {item_idx} in batch: Document number present: {has_document_number}, Amount settled present: {has_amount_settled}, Entry type present: {has_entry_type}")
+                logging.debug(f"  Item {item_idx} content: {item}")
+                if has_document_number or has_amount_settled or has_entry_type:
                     missing_details = False
                     logging.debug(f"Batch {batch_num} deemed detailed based on item {item_idx}.")
                     break # Found at least one detailed item, so the batch is considered detailed
@@ -366,29 +367,32 @@ def normalize_extracted_data(extracted_data: dict):
                 else:
                     # If we have fewer results than rows, duplicate the first result for remaining rows
                     item = batch_results[0].copy() if batch_results else global_metadata.copy()
-                # Add row-specific data
-                item['invoice_number'] = row.get('Invoice Number', None)
-                # Format date correctly as DD-MM-YYYY
-                date_str = row.get('Date', None)
+                # Add row-specific data using the new field structure
+                doc_number = row.get('Invoice Number', None) or row.get('Document Number', None)
+                item['Document number'] = doc_number
+
+                # Format date correctly
+                date_str = row.get('Date', None) or row.get('Invoice Date', None)
                 if date_str:
                     try:
                         # Try to parse common date formats
                         for date_format in ["%d-%b-%Y", "%d-%B-%Y", "%d-%m-%Y", "%d/%m/%Y", "%Y-%m-%d"]:
                             try:
                                 parsed_date = datetime.datetime.strptime(date_str, date_format)
-                                item['invoice_date'] = parsed_date.strftime("%d-%m-%Y")
+                                item['Invoice date'] = parsed_date.strftime("%Y-%m-%d")  # Use ISO format
                                 break
                             except ValueError:
                                 continue
                         # If all formats failed, just use the original string
-                        if 'invoice_date' not in item or not item['invoice_date']:
-                            item['invoice_date'] = date_str
+                        if 'Invoice date' not in item or not item['Invoice date']:
+                            item['Invoice date'] = date_str
                     except Exception:
-                        item['invoice_date'] = date_str
+                        item['Invoice date'] = date_str
                 else:
-                    item['invoice_date'] = None
-                # Handle amounts in parentheses as negative
-                amount_str = row.get('Amount Paid', '0')
+                    item['Invoice date'] = None
+
+                # Handle amount settled
+                amount_str = row.get('Amount Paid', '0') or row.get('Amount', '0')
                 if amount_str:
                     # Remove parentheses, commas, and currency symbols
                     amount_str = amount_str.replace(',', '')
@@ -397,17 +401,135 @@ def normalize_extracted_data(extracted_data: dict):
                     if amount_str.startswith('(') and amount_str.endswith(')'):
                         amount_str = '-' + amount_str[1:-1]
                     try:
-                        item['amount_paid'] = float(amount_str)
+                        amount_value = float(amount_str)
+                        item['Amount settled'] = amount_value
                     except ValueError:
-                        item['amount_paid'] = None
-                # Check if this is a TDS entry
-                if 'TDS' in str(item['invoice_number']) or 'TDS' in str(row.get('Invoice description', '')):
-                    item['doc_type'] = 'TDS'
-                    if item['amount_paid'] and item['amount_paid'] < 0:
-                        item['tds_deducted'] = abs(item['amount_paid'])
-                        item['amount_paid'] = None
+                        item['Amount settled'] = None
+                
+                # Determine entry type and transaction type based on available data
+                # Collect all available description fields for better inference
+                description = ''
+                for key, value in row.items():
+                    if isinstance(value, str) and ('descr' in key.lower() or 'detail' in key.lower() or 'narration' in key.lower()):
+                        description += str(value) + ' '
+                
+                # Add any other fields that might contain useful information
+                description += ' ' + str(row.get('Description', ''))
+                description += ' ' + str(row.get('Invoice description', ''))
+                description += ' ' + str(row.get('Particulars', ''))
+                description += ' ' + str(row.get('Remarks', ''))
+                description = description.strip()
+                
+                # Initialize entry_type and document numbers
+                entry_type = None
+                transaction_type = None
+                invoice_number = None
+                other_doc_number = None
+                
+                # Extract potential document numbers based on patterns
+                potential_inv_numbers = []
+                potential_doc_numbers = []
+                
+                # Look for invoice number patterns (INV followed by digits, or digits with specific prefixes)
+                for key, value in row.items():
+                    if not value or not isinstance(value, str):
+                        continue
+                    
+                    # Look for invoice patterns
+                    if ('invoice' in key.lower() or 'inv' in key.lower()) and any(c.isdigit() for c in value):
+                        potential_inv_numbers.append(value)
+                    
+                    # Look for UTR, BDPO, or other document number patterns
+                    if ('utr' in key.lower() or 'ref' in key.lower() or 'tds' in key.lower() or 
+                        'bdpo' in key.lower() or 'number' in key.lower() or 'certificate' in key.lower()):
+                        potential_doc_numbers.append(value)
+                
+                # The best document number is the one with the most digits
+                best_inv_number = None
+                if potential_inv_numbers:
+                    best_inv_number = max(potential_inv_numbers, key=lambda x: sum(c.isdigit() for c in x))
+                
+                best_doc_number = None
+                if potential_doc_numbers:
+                    best_doc_number = max(potential_doc_numbers, key=lambda x: sum(c.isdigit() for c in x))
+                
+                # Determine entry type from description and available information
+                if 'TDS' in description or any('tds' in str(k).lower() for k in row.keys()):
+                    entry_type = 'TDS dr'
+                    transaction_type = 'Dr'
+                    other_doc_number = best_doc_number or doc_number or 'TDS-' + str(row.get('Date', ''))
+                
+                # Check if this is an invoice
+                elif ('INV' in description or 'Invoice' in description or 
+                      any('invoice' in str(k).lower() for k in row.keys()) or 
+                      best_inv_number):
+                    entry_type = 'Invoice cr'
+                    transaction_type = 'Cr'
+                    invoice_number = best_inv_number or doc_number
+                
+                # Check if this is a bank receipt/payment
+                elif ('UTR' in description or 'Payment' in description or 'Receipt' in description or 
+                      'bank' in description.lower() or 'paid' in description.lower() or 
+                      any('utr' in str(k).lower() or 'payment' in str(k).lower() for k in row.keys())):
+                    entry_type = 'Bank receipt dr'
+                    transaction_type = 'Dr'
+                    other_doc_number = best_doc_number or doc_number or 'UTR-' + str(row.get('Date', ''))
+                
+                # Check if this is a BDPO entry
+                elif 'BDPO' in description or 'BD-Coop' in description:
+                    entry_type = 'BDPO dr'
+                    transaction_type = 'Dr'
+                    other_doc_number = best_doc_number or doc_number or 'BDPO-' + str(row.get('Date', ''))
+                
+                # Check if this is a debit note
+                elif 'Debit' in description or 'DN' in description:
+                    entry_type = 'Debit note dr'
+                    transaction_type = 'Dr'
+                    other_doc_number = best_doc_number or doc_number or 'DN-' + str(row.get('Date', ''))
+                
                 else:
-                    item['doc_type'] = 'Invoice'
+                    # Default fallback based on amount direction
+                    amount_str = row.get('Amount Paid', '0') or row.get('Amount', '0')
+                    amount_settled = None
+                    
+                    if isinstance(amount_str, str):
+                        # Clean the amount string
+                        amount_str = amount_str.replace(',', '')
+                        amount_str = amount_str.replace('₹', '').replace('$', '').replace('€', '').replace('£', '')
+                        # Handle negative amounts in parentheses
+                        if amount_str.startswith('(') and amount_str.endswith(')'):
+                            amount_str = '-' + amount_str[1:-1]
+                        try:
+                            amount_settled = float(amount_str)
+                        except ValueError:
+                            pass
+                    elif isinstance(amount_str, (int, float)):
+                        amount_settled = float(amount_str)
+                    
+                    if amount_settled is not None and amount_settled < 0:
+                        entry_type = 'Invoice cr'
+                        transaction_type = 'Cr'
+                        invoice_number = best_inv_number or 'INV-' + str(row.get('Date', ''))
+                    else:
+                        entry_type = 'Bank receipt dr'
+                        transaction_type = 'Dr'
+                        other_doc_number = best_doc_number or 'UTR-' + str(row.get('Date', ''))
+                
+                # Set the entry type, transaction type and document numbers
+                item['Entry type'] = entry_type
+                item['Transaction type(Dr/cr)'] = transaction_type
+                
+                # Set document numbers based on entry type
+                if entry_type == 'Invoice cr':
+                    item['Invoice number'] = invoice_number
+                    item['Other document number'] = None
+                else:
+                    item['Invoice number'] = None
+                    item['Other document number'] = other_doc_number
+                
+                # Set vendor and customer names (correctly mapped)
+                item['Customer Name as per Payment advice'] = item.get('Customer Name as per Payment advice') or row.get('Customer Name', None) or global_metadata.get('customer_name', None)
+                item['Vendor name (Payee name)'] = item.get('Vendor name (Payee name)') or row.get('Vendor Name', None) or global_metadata.get('vendor_name', None)
                 
                 enhanced_batch.append(item)
             batch_results = enhanced_batch
@@ -420,33 +542,29 @@ def normalize_extracted_data(extracted_data: dict):
     # The fallback logic also tries to create fields like 'invoice_number', 'invoice_date', 'amount_paid'.
     # The process_batch function is expected to return a list of dictionaries where keys are already the target schema names.
 
-    # Define the expected final 11 fields as per the normalize_prompt for consistency check / final mapping.
+    # Define the expected fields from the LLM response (9 fields as per prompt)
     final_expected_fields = [
-        "Payment Advice number", "Sendor mail", "Original sendor mail", "Vendor name", 
-        "Customer Name as per Payment advice", "Entry type", "Invoice number", "Invoice date",
-        "UTR no.", "BDPO inv no.", "Credit note no.", "Amount settled"
+        "Payment Advice number", "Sendor mail", "Original sendor mail", 
+        "Vendor name (Payee name)", "Customer Name as per Payment advice", 
+        "Entry type", "Amount settled", "Other document number", "Invoice number"
     ]
 
-    # Mapping for keys potentially coming from fallback or if LLM deviates from strict Title Case output.
-    # This maps commonly produced snake_case keys (especially from fallback) to the final Title Case fields.
+    # Mapping for keys potentially coming from fallback or if LLM deviates from strict output format
     fallback_to_final_mapping = {
         'invoice_number': 'Invoice number',
-        # 'invoice_date': 'Invoice Date', # 'Invoice Date' is not one of the 11 target fields in normalize_prompt.
-                                        # If it's needed, it should be added to final_expected_fields and prompt.
         'amount_paid': 'Amount settled',
-        'tds_deducted': 'TDS Deducted', # Assuming TDS might appear and needs mapping, not in 11 fields.
         'doc_type': 'Entry type',
-        'doc_number': 'Invoice number', # Or 'Credit note no.' or 'BDPO inv no.' depending on context not available here.
-                                        # 'Invoice number' is a safe default if 'doc_number' appears from fallback.
-        # Global metadata fields that might be snake_case if not handled by LLM's direct output
+        'doc_number': None,  # This needs special handling based on entry type
+        'utr_number': 'Other document number',  # For bank receipt entries
+        'tds_reference': 'Other document number',  # For TDS entries
+        'bdpo_number': 'Other document number',  # For BDPO entries
+        'debit_note_number': 'Other document number',  # For Debit note entries
         'payment_advice_number': 'Payment Advice number',
         'sendor_mail': 'Sendor mail',
         'original_sendor_mail': 'Original sendor mail',
-        'vendor_name': 'Vendor name',
-        'customer_name': 'Customer Name as per Payment advice', # Maps to the specific customer name field
-        'utr': 'UTR no.'
-        # Note: 'payment_date', 'customer_id', 'currency' are not in the 11 target fields of normalize_prompt.
-        # They would be part of the global_metadata if extracted by the first LLM call and can be added if needed.
+        'vendor_name': 'Vendor name (Payee name)',
+        'customer_name': 'Customer Name as per Payment advice',
+        'utr': 'UTR'
     }
 
     final_structured_items = []
@@ -454,29 +572,107 @@ def normalize_extracted_data(extracted_data: dict):
         final_item = {}
 
         # Map LLM fields to schema_processor.FINAL_COLUMNS keys
-        final_item["Payment date"] = None # Filled later by create_final_df from global metadata
+        final_item["Payment date"] = None  # Filled later by create_final_df from global metadata
         final_item["Payment advice number"] = item_llm.get("Payment Advice number")
-        final_item["Invoice number"] = item_llm.get("Invoice number")
-        final_item["Invoice date"] = item_llm.get("Invoice date")
         final_item["Customer name"] = item_llm.get("Customer Name as per Payment advice")
-        final_item["Customer id (SAP id)"] = None # Not in line-item LLM output
-        final_item["UTR"] = item_llm.get("UTR no.")
+        final_item["Customer id (SAP id)"] = None  # Not in line-item LLM output
         
+        # Get entry type and set Doc type
         entry_type = item_llm.get("Entry type")
         final_item["Doc type"] = entry_type
+        
+        # Determine transaction type from entry type suffix for internal use
+        transaction_type = None
+        if entry_type:
+            if entry_type.lower().endswith(" dr"):
+                transaction_type = "Dr"
+            elif entry_type.lower().endswith(" cr"):
+                transaction_type = "Cr"
+        
+        # Handle document numbers based on entry type
+        invoice_number = item_llm.get("Invoice number")
+        other_doc_number = item_llm.get("Other document number")
+        
+        # Properly separate Invoice number and Other document number based on entry type
+        if entry_type and entry_type.lower() == "invoice cr":
+            # For Invoice entries:
+            # - Set Invoice number field
+            # - Keep Other document number as null
+            # - Doc number gets the invoice number for consistency
+            final_item["Invoice number"] = invoice_number
+            final_item["Doc number"] = invoice_number  # For consistency in Doc number field
+        else:
+            # For non-Invoice entries:
+            # - Keep Invoice number as null
+            # - Set Other document number based on entry type
+            # - Doc number gets the other document number for consistency
+            final_item["Invoice number"] = None
+            final_item["Doc number"] = other_doc_number
+            
+            # Set UTR specifically for bank receipts
+            if entry_type and entry_type.lower() == "bank receipt dr":
+                final_item["UTR"] = other_doc_number
+            else:
+                final_item["UTR"] = None
+        
+        # Fallback logic if document numbers are missing
+        if not final_item["Doc number"] and entry_type:
+            # Try to extract from other fields based on entry type
+            if entry_type.lower() == "invoice cr":
+                doc_num = item_llm.get("invoice_number")
+                final_item["Doc number"] = doc_num
+                final_item["Invoice number"] = doc_num
+            elif entry_type.lower() == "bank receipt dr":
+                doc_num = item_llm.get("utr") or item_llm.get("payment_reference") or item_llm.get("UTR no.")
+                final_item["Doc number"] = doc_num
+                final_item["UTR"] = doc_num
+            elif entry_type.lower() == "bdpo dr":
+                doc_num = item_llm.get("bdpo_number") or item_llm.get("BDPO inv no.")
+                final_item["Doc number"] = doc_num
+            elif entry_type.lower() == "debit note dr":
+                doc_num = item_llm.get("debit_note_number") or item_llm.get("Debit note no.")
+                final_item["Doc number"] = doc_num
+            elif entry_type.lower() == "tds dr":
+                doc_num = item_llm.get("tds_reference") or item_llm.get("tds_certificate_number") or item_llm.get("TDS ref")
+                final_item["Doc number"] = doc_num
 
-        doc_number_val = None
-        if entry_type == "Invoice":
-            doc_number_val = item_llm.get("Invoice number")
-        elif entry_type == "BD-Coop Settlement":
-            doc_number_val = item_llm.get("BDPO inv no.")
-        elif entry_type in ["Debit Note", "Credit Note"]:
-            doc_number_val = item_llm.get("Credit note no.")
-        elif entry_type == "TDS": # TDS might reference an invoice number
-            doc_number_val = item_llm.get("Invoice number") # Or another reference if available
-        # For 'Payment' or other types, doc_number might be sourced differently or be None
-        final_item["Doc number"] = doc_number_val
+        # Handle TDS entries
+        if entry_type and entry_type.lower() == "tds dr":
+            tds_amount = item_llm.get("Amount settled")
+            if tds_amount is not None:
+                try:
+                    tds_amount = float(tds_amount)
+                except (ValueError, TypeError):
+                    tds_amount = 0.0
+                # TDS amount should be positive in the output since it's a dr entry
+                final_item["TDS deducted"] = tds_amount if tds_amount > 0 else abs(tds_amount)
+                final_item["Amount paid"] = None
+            else:
+                final_item["TDS deducted"] = 0.0
+                final_item["Amount paid"] = None
+        else:
+            # Handle normal payment entries
+            amount = item_llm.get("Amount settled")
+            if amount is not None:
+                try:
+                    amount = float(amount)
+                except (ValueError, TypeError):
+                    amount = 0.0
+                # Keep amount as is without flipping signs
+                final_item["Amount paid"] = amount
+            else:
+                final_item["Amount paid"] = 0.0
+            final_item["TDS deducted"] = 0.0
 
+        # Set invoice date if available in the item_llm, otherwise it stays null from above
+        if "Invoice date" in item_llm and item_llm["Invoice date"]:
+            final_item["Invoice date"] = item_llm.get("Invoice date")
+        else:
+            final_item["Invoice date"] = None
+            
+        # Set currency and PA link defaults
+        final_item["Currency"] = "INR"     # Default currency
+        final_item["PA link"] = None       # Default PA link
         amount_settled_str = item_llm.get("Amount settled")
         amount_settled_numeric = None
         if amount_settled_str is not None:
@@ -485,19 +681,21 @@ def normalize_extracted_data(extracted_data: dict):
             except (ValueError, TypeError):
                 logging.warning(f"Could not convert 'Amount settled' value '{amount_settled_str}' to float. Item: {item_llm}")
         
-        if entry_type == "TDS":
-            # TDS deducted is typically positive, representing the amount withheld.
-            # LLM is prompted to return positive TDS amounts in 'Amount settled' for TDS entries.
+        # Determine if this is a TDS entry
+        is_tds_entry = entry_type and "tds" in entry_type.lower()
+        
+        if is_tds_entry:
+            # For TDS entries, amount goes to TDS deducted
             final_item["TDS deducted"] = abs(amount_settled_numeric) if amount_settled_numeric is not None else None
             final_item["Amount paid"] = 0.0
         else:
-            # Amount paid for invoices/other non-TDS entries should be positive.
-            # LLM returns negative 'Amount settled' for invoices (debits).
+            # For all other entries, amount goes to Amount paid
             final_item["Amount paid"] = abs(amount_settled_numeric) if amount_settled_numeric is not None else None
             final_item["TDS deducted"] = 0.0
-
-        final_item["Currency"] = None # Filled later by create_final_df
-        final_item["PA link"] = None # Not in line-item LLM output
+        
+        # Add currency and PA link fields
+        final_item["Currency"] = "INR"  # Default to INR - can be overridden in create_final_df if needed
+        final_item["PA link"] = None  # Not in line-item LLM output
 
         final_structured_items.append(final_item)
         
@@ -520,8 +718,11 @@ def process_batch(batch_data, global_metadata, llm):
     # Create the normalization prompt for this batch
     normalize_prompt = """
 You are a payment advice normalization engine. Your task is to process a list of financial entries.
-For EACH financial entry provided in the `FINANCIAL ENTRIES TO PROCESS` list below, you MUST convert it into the STANDARD 11-FIELD FORMAT.
+For EACH financial entry provided in the `FINANCIAL ENTRIES TO PROCESS` list below, you MUST convert it into the STANDARD FORMAT.
 After processing ALL entries, you MUST gather them into a single JSON array. Each entry from the input list must have a corresponding JSON object in the output array.
+
+BUSINESS CONTEXT:
+The system is processing payment advice documents received from clients. You (the vendor) receive these payment records from your clients (buyers). These documents show entries in the client's accounting system that affect your account with them. This data needs to be normalized into a consistent structure for your accounting system.
 
 GLOBAL METADATA:
 {global_metadata}
@@ -530,64 +731,103 @@ FINANCIAL ENTRIES TO PROCESS:
 {batch_data}
 
 REQUIRED OUTPUT FIELDS:
-1. Payment Advice number
-2. Sendor mail
-3. Original sendor mail
-4. Vendor name
-5. Customer Name as per Payment advice
-6. Entry type (MUST be: Invoice/Payment/BD-Coop Settlement/Debit Note/TDS)
-7. Invoice number
-8. Invoice date (format as YYYY-MM-DD if possible, otherwise as seen)
-9. UTR no.
-10. BDPO inv no.
-11. Credit note no.
-12. Amount settled
+1. Payment Advice number - Reference number of the document being processed
+2. Sendor mail - Email address from which the payment advice was received
+3. Original sendor mail - Root sender email (ignoring any forwards)
+4. Vendor name (Payee name) - Your company name as the vendor/payee
+5. Customer Name as per Payment advice - Client name as shown in the payment advice
+6. Entry type - Must be one of: "Bank receipt dr", "BDPO dr", "Debit note dr", "TDS dr", "Invoice cr"
+7. Amount settled - Monetary value associated with the entry
+8. Other document number - The unique identifier for non-invoice entries
+9. Invoice number - Only populated for Invoice entries, otherwise null
 
 PROCESSING RULES:
 1. For EACH entry:
-   - Determine "Entry type" by analyzing description:
-        • "Invoice" = Invoice references
-        • "Payment" = UTR numbers + payment keywords
-        • "BD-Coop Settlement" = BD/Coop invoice numbers
-        • "Debit Note" = Debit note references
-        • "TDS" = TDS/Tax keywords
+   - Determine "Entry type" by analyzing the transaction details, descriptions, and type of numbers mentioned:
+      • "Bank receipt dr" = Bank payment references/receipts, UTR numbers, often containing "paid", "payment", "receipt", "bank"
+      • "BDPO dr" = Marketing service credits, often containing "BDPO", "BD-Coop", "marketing"
+      • "Debit note dr" = Debit notes, often containing "debit", "damage", "return", "DN"
+      • "TDS dr" = Tax Deducted at Source, often containing "TDS", "tax", "deduction", "certificate"
+      • "Invoice cr" = Invoice entries, often containing "INV", "invoice", "bill", "sale"
 
-2. Extract field-specific data:
-   - "Amount settled": 
-        • Convert the source amount to a numerical value (remove currency symbols like ₹, $, and commas like in 1,234.56).
-        • Ensure that amounts in parentheses, e.g., (1,234.56), are treated as negative numbers (e.g., -1234.56) after this initial numerical conversion.
-        • APPLY SIGN TRANSFORMATION FOR THE 'Amount settled' OUTPUT FIELD:
-            - If the numerically converted source amount (from the steps above) is NEGATIVE (this represents a credit to your vendor account in the customer's books, meaning it's money owed to you or a reduction of what you owe them): The final 'Amount settled' value in the output should be POSITIVE.
-            - If the numerically converted source amount (from the steps above) is POSITIVE (this represents a debit to your vendor account in the customer's books, meaning it's money you owe them or a payment they made): The final 'Amount settled' value in the output should be NEGATIVE.
-        (In simpler terms: after converting the source amount to a clean number, flip its sign to get the 'Amount settled' value for the output.)
-   - "Invoice number": Only for Invoice/Debit Note types
-   - "UTR no.": Only for Payment entries
-   - "BDPO inv no.": Only for BD-Coop Settlement
-   - "Credit note no.": If available
+2. For document number fields:
+   • "Invoice number": ONLY populate this field when the Entry type is "Invoice cr". Look for numbers prefixed with INV, invoice numbers, bill numbers. Must be non-null for Invoice entries.
+   • "Other document number": For non-Invoice entries, populate with:
+      - For "Bank receipt dr": Use UTR or payment reference number (often numeric and 10+ digits)
+      - For "BDPO dr": Use BDPO invoice number (often prefixed with BDPO)
+      - For "Debit note dr": Use debit note number (often prefixed with DN)
+      - For "TDS dr": Use TDS reference or certificate number
+      - For "Invoice cr": Leave as null
 
-3. SIGN CONVENTION CLARIFICATION:
-   - Vendor account in customer books:
-        • Credit entry (our money) = Negative in source → POSITIVE in "Amount settled"
-        • Debit entry (their money) = Positive in source → NEGATIVE in "Amount settled"
+3. For "Amount settled":
+   • Convert the source amount to a numerical value (remove currency symbols like ₹, $, and commas)
+   • For values in parentheses like (1,234.56), treat as negative values
+   • DO NOT flip the signs of amounts - preserve them exactly as they appear in the source data
+   • "dr" entries (debits) are typically positive amounts in client books (they receive money)
+   • "cr" entries (credits) are typically negative amounts in client books (they give money)
+   • NEVER leave this field as null - provide a numerical value even if it's an estimate
+   • For TDS entries, look for small percentage amounts (usually 1-10% of invoice values)
 
-4. Use EXACTLY these names in output JSON array:
-["Payment Advice number", "Sendor mail", "Original sendor mail", "Vendor name", 
-"Customer Name as per Payment advice", "Entry type", "Invoice number", "Invoice date", 
-"UTR no.", "BDPO inv no.", "Credit note no.", "Amount settled"]
+DATA PROCESSING STRATEGY:
+1. First, scan for obvious entry types based on keywords in descriptions or reference numbers
+2. Group related invoice and payment entries by looking at matching amounts, dates, or references
+3. Ensure every entry has an appropriate document number - use Invoice number for Invoice cr entries, and Other document number for all other entry types
+4. Use context from surrounding entries to infer missing values (e.g., Payment Advice numbers should be consistent across related entries)
+5. If an amount appears both as a positive and negative value in different entries, they likely represent offsetting debit/credit pairs
+
+CLARIFICATION OF TRANSACTION TYPES:
+From the client's perspective (buyers):
+- Debit entries (dr/+ve) represent money they receive or credits in their favor
+- Credit entries (cr/-ve) represent money they give to the vendor
+- TDS entries are DEBITS because the client pays tax on behalf of the vendor
+- Invoice entries are CREDITS because the client owes money to the vendor
+- Bank receipts are DEBITS because they offset the client's credit to the vendor
 
 OUTPUT FORMAT (STRICT JSON):
 [
-  { "Payment Advice number": "PA-123", "Sendor mail": "sender@client.com", "Invoice date": "2023-01-15", ... }},
-  { "Payment Advice number": "PA-123", "Sendor mail": "sender@client.com", "Invoice date": "2023-01-16", ... }}
+  { 
+    "Payment Advice number": "337027030", 
+    "Sendor mail": "accounts@clientcompany.com", 
+    "Original sendor mail": "finance@clientcompany.com",
+    "Vendor name (Payee name)": "Vendor Company Ltd", 
+    "Customer Name as per Payment advice": "KWICK LIVING (I) PRIVATE LIMITED",
+    "Entry type": "Invoice cr",
+    "Amount settled": -5000.00, 
+    "Other document number": null, 
+    "Invoice number": "INV-001"
+  },
+  { 
+    "Payment Advice number": "337027030", 
+    "Sendor mail": "accounts@clientcompany.com", 
+    "Original sendor mail": "finance@clientcompany.com",
+    "Vendor name (Payee name)": "Vendor Company Ltd", 
+    "Customer Name as per Payment advice": "KWICK LIVING (I) PRIVATE LIMITED",
+    "Entry type": "Bank receipt dr",
+    "Amount settled": 5000.00, 
+    "Other document number": "UTR763950212", 
+    "Invoice number": null
+  },
+  { 
+    "Payment Advice number": "337027030", 
+    "Sendor mail": "accounts@clientcompany.com", 
+    "Original sendor mail": "finance@clientcompany.com",
+    "Vendor name (Payee name)": "Vendor Company Ltd", 
+    "Customer Name as per Payment advice": "KWICK LIVING (I) PRIVATE LIMITED",
+    "Entry type": "TDS dr",
+    "Amount settled": 500.00, 
+    "Other document number": "TDS-CERT-123", 
+    "Invoice number": null
+  }
 ]
 
 CRITICAL (JSON Array Output):
 - The final output MUST be a JSON array.
-- Each object in the array MUST represent one processed financial entry from the input `FINANCIAL ENTRIES TO PROCESS` list.
-- Each object in the array MUST contain exactly 12 fields as specified in REQUIRED OUTPUT FIELDS.
-- Use null for unavailable fields.
-- Never skip any entry from the input list; if an entry cannot be fully processed, still include it with nulls for missing fields but ensure all 12 keys are present.
-- APPLY SIGN CONVERSION: As specified in PROCESSING RULES, flip the sign of the source amount to get the 'Amount settled' value.
+- Every extraction MUST have ALL 9 fields specified.
+- Never skip any entry from the input list; all entries must be represented in the output.
+- NEVER produce invalid JSON with trailing commas, unbalanced brackets, or incorrect syntax.
+- Look carefully at the data for document numbers and record each one - NEVER leave document number fields empty unless absolutely nothing in the source could be a document number.
+- For every "Invoice cr" entry, ALWAYS populate the Invoice number field and leave Other document number as null.
+- For all non-Invoice entries, ALWAYS populate the Other document number field and leave Invoice number as null.
 """
     
     filled_prompt = normalize_prompt.replace("{global_metadata}", json.dumps(global_metadata, indent=2))
