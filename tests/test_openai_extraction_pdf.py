@@ -38,8 +38,12 @@ def main():
     results_dir = Path("results/openai")
     results_dir.mkdir(parents=True, exist_ok=True)
     
-    # Path to test PDF
-    pdf_path = Path("src/data/test.pdf")
+    # Path to test PDF - use command line argument if provided
+    if len(sys.argv) > 1:
+        pdf_path = Path(sys.argv[1])
+    else:
+        pdf_path = Path("src/data/test.pdf")
+    
     if not pdf_path.exists():
         logger.error(f"Test PDF not found at {pdf_path}")
         return
@@ -116,7 +120,16 @@ def main():
         # If we got a single invoice as a dictionary, wrap it in a list
         normalized_items = [normalized_items]
     
-    df = create_final_df(normalized_items, metadata)
+    # Load the extracted structure for validation
+    extracted_structure = None
+    try:
+        with open(results_dir / "extracted_structure.json", "r", encoding="utf-8") as f:
+            extracted_structure = json.load(f)
+        logger.info("Loaded extracted structure for row count validation")
+    except Exception as e:
+        logger.error(f"Could not load extracted structure for validation: {e}")
+    
+    df = create_final_df(normalized_items, metadata, extracted_structure)
     
     # Save and display results
     if not df.empty:

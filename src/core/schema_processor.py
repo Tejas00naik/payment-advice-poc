@@ -16,42 +16,84 @@ FINAL_COLUMNS = [
 ]
 
 
-def create_final_df(llm_items: List[Dict[str, Any]], metadata: Dict[str, str]) -> pd.DataFrame:
-    """Create validated DataFrame from LLM output"""
-    # Validate input
-    if not llm_items:
-        logging.warning("No items received for final dataframe")
-        return pd.DataFrame(columns=FINAL_COLUMNS)
-    
-    # Check for missing fields
-    missing_fields = [col for col in FINAL_COLUMNS if col not in llm_items[0]]
-    if missing_fields:
-        logging.warning(f"Missing fields in LLM output: {', '.join(missing_fields)}")
+def create_final_df(normalized_data, metadata=None, extracted_structure=None):
     """
-    Create validated DataFrame from LLM output
+    Create a validated DataFrame from normalized output.
     
     Args:
-        llm_items: List of dictionaries with structured payment advice data
-        metadata: Dictionary of extracted metadata from the document
+        normalized_data (list): List of normalized data items
+        metadata (dict): Optional metadata to fill into the DataFrame
+        extracted_structure (dict): Original extraction structure for validation
         
     Returns:
-        DataFrame with validated and standardized data
+        pd.DataFrame: Final validated DataFrame
     """
-    # Create DataFrame from items
-    if not llm_items:
-        # Return empty DataFrame with correct columns if no items found
-        return pd.DataFrame(columns=FINAL_COLUMNS)
+    # First, validate we have all rows from the original extraction
+    if extracted_structure and isinstance(extracted_structure, dict):
+        try:
+            # Count financial entries in the original extraction
+            orig_entries = extracted_structure.get('table_data', {}).get('financial_entries', [])
+            orig_count = len(orig_entries)
+            norm_count = len(normalized_data)
+            
+            # Check the row counts
+            if orig_count > 0 and norm_count < orig_count:
+                logging.warning(f"Warning: Original extraction had {orig_count} rows but normalized data has only {norm_count} rows")
+                logging.warning("Some rows may have been lost during normalization")
+                
+                # Attempt to check the row identifiers if they exist to see which rows were dropped
+                if orig_count > 0 and len(orig_entries[0]) > 0:
+                    # Check if entries have serial numbers
+                    serial_fields = [f for f in orig_entries[0].keys() if f.lower() in ('sr no.', 'sr.no', 'sno', 's.no', '#', 'row', 'line')]
+                    
+                    if serial_fields:
+                        serial_field = serial_fields[0]
+                        orig_serials = set([str(entry.get(serial_field)) for entry in orig_entries if entry.get(serial_field)])
+                        
+                        # Build a corresponding set from normalized data if possible
+                        norm_serials = set()
+                        for entry in normalized_data:
+                            # Check for serial number in different forms
+                            for field in entry.keys():
+                                if field.lower() in ('sr no.', 'sr.no', 'sno', 's.no', '#', 'row', 'line', 'invoice number'):
+                                    if entry.get(field):
+                                        norm_serials.add(str(entry.get(field)))
+                                        break
+                        
+                        # Find missing serials
+                        missing = orig_serials - norm_serials
+                        if missing:
+                            logging.warning(f"Missing row numbers: {', '.join(sorted(missing))}")
+        except Exception as e:
+            logging.error(f"Error validating row counts: {e}")
     
-    df = pd.DataFrame(llm_items)
+    # Create DataFrame from the normalized data
+    df = pd.DataFrame(normalized_data)
+    
+    # Fill metadata columns if available
+    if metadata and isinstance(metadata, dict):
+        for key, value in metadata.items():
+            # Skip None values to avoid error in fillna
+            if value is not None:
+                if key in df.columns:
+                    df[key] = df[key].fillna(value)
+                elif key not in df.columns:
+                    df[key] = value
+    
+    # Log final column info
+    logging.info(f"Created final DataFrame with {len(df)} rows and columns: {list(df.columns)}")
     
     # Ensure all columns exist
     for col in FINAL_COLUMNS:
         if col not in df.columns:
             df[col] = None
     
-    # Post-processing: fill in metadata
-    df["Payment Advice number"] = df["Payment Advice number"].fillna(metadata.get("payment_advice_no"))
-    df["Customer Name as per Payment advice"] = df["Customer Name as per Payment advice"].fillna(metadata.get("customer_name"))
+    # Post-processing: fill in metadata if values are not None
+    if metadata.get("payment_advice_no") is not None:
+        df["Payment Advice number"] = df["Payment Advice number"].fillna(metadata.get("payment_advice_no"))
+    
+    if metadata.get("customer_name") is not None:
+        df["Customer Name as per Payment advice"] = df["Customer Name as per Payment advice"].fillna(metadata.get("customer_name"))
     
     # Type conversion for numeric fields
     for col in ["Amount settled"]:
@@ -66,22 +108,6 @@ def create_final_df(llm_items: List[Dict[str, Any]], metadata: Dict[str, str]) -
 
 
 def validate_df(df: pd.DataFrame) -> bool:
-    """Ensure data quality before saving"""
-    # Skip validation if empty DataFrame
-    if df.empty:
-        logging.warning("Empty DataFrame received for validation")
-        return True
-    
-    # Add entry count validation
-    entry_count = len(df)
-    if entry_count < 10:
-        logging.warning(f"Low entry count: {entry_count}. Expected 20+ entries")
-    
-    # Add null check
-    null_counts = df.isnull().sum()
-    high_null = null_counts[null_counts > 0]
-    if not high_null.empty:
-        logging.warning("Null values detected:\n" + high_null.to_string())
     """
     Ensure data quality before saving
     
