@@ -361,16 +361,27 @@ def normalize_extracted_data(extracted_data: dict):
         with open(batch_output_file, 'w') as f:
             json.dump(batch_results, f, indent=2)
         
-        # Log batch processing results
+        batch_id = str(uuid.uuid4())[:8]
         logging.info(f"Batch {batch_id}: Processed {len(batch_data)} entries, got {len(batch_results)} results")
-        if len(batch_results) != len(batch_data):
-            logging.warning(f"Batch {batch_id}: Entry count mismatch! Expected {len(batch_data)}, got {len(batch_results)}")
-            logging.warning(f"Batch files saved at: {batch_input_file} and {batch_output_file}")
-        logging.info(f"Saved batch output to {batch_output_file}")
         
-        logging.debug(f"Batch {batch_num} results from process_batch (first 2 items): {batch_results[:2]}")
-        logging.debug(f"Number of items in batch_results: {len(batch_results) if batch_results else 0}")
-
+        # Verify the expected number of entries - allow for payment entry
+        allowed_counts = [len(batch_data), len(batch_data) + 1]
+        if len(batch_results) not in allowed_counts:
+            logging.warning(f"Batch {batch_id}: Entry count mismatch! Expected {len(batch_data)} or {len(batch_data)+1}, got {len(batch_results)}")
+            
+            # Save batch files for later debugging
+            batch_dir = Path("results/llm_batches")
+            batch_dir.mkdir(parents=True, exist_ok=True)
+            
+            batch_input_file = batch_dir / f"batch_{batch_id}_input.json"
+            batch_output_file = batch_dir / f"batch_{batch_id}_output.json"
+            
+        # Log the number of items processed
+        if len(batch_results) == len(batch_data) + 1:
+            logging.info(f"Successfully normalized {len(batch_data)} items plus 1 payment entry (total: {len(batch_results)} items)")
+        else:
+            logging.info(f"Successfully normalized {len(batch_results)} items out of {len(batch_data)} expected items")
+        
         # Verify batch results
         if batch_results and all(isinstance(item, dict) for item in batch_results):
             for item_idx, item in enumerate(batch_results):
@@ -399,80 +410,56 @@ def process_batch(batch_data, global_metadata, llm):
     logging.debug(f"Global metadata keys: {list(global_metadata.keys())}")
     
     normalize_prompt = """
-CRITICAL INSTRUCTIONS:
-- INPUT ENTRIES: {entry_count}
-- OUTPUT ENTRIES MUST BE EXACTLY: {entry_count}
-- NEVER SKIP, MERGE, OR OMIT ENTRIES
-- PROCESS EACH ENTRY INDEPENDENTLY
-- RETURN A JSON ARRAY WITH EXACTLY {entry_count} OBJECTS
-- VERIFY YOUR OUTPUT LENGTH BEFORE RETURNING
+You are a payment advice normalization engine. Your task is to process financial entries and output standardized JSON objects.
 
-You are a payment advice normalization engine. Your task is to process EVERY SINGLE financial entry in the provided list. You MUST process ALL entries and return the EXACT SAME NUMBER of normalized objects as input entries.
+CRITICAL REQUIREMENTS:
+1. Process ALL {entry_count} input entries - do not skip any
+2. Ensure each input entry has a corresponding output entry in the same order
+3. Format all entries according to the 9-field schema below
+4. Handle 'bdpo' entries correctly - they must be 'BDPO dr' type with document in 'Other document number'
+5. IF payment information exists in metadata, add ONE EXTRA entry for it
 
-BUSINESS CONTEXT:
-The system is processing payment advice documents received from clients. You (the vendor) receive these payment records from your clients (buyers). These documents show entries in the client's accounting system that affect your account with them.
+INPUT:
+- Financial entries: {batch_data}
+- Metadata: {global_metadata}
 
-GLOBAL METADATA:
-{global_metadata}
-
-FINANCIAL ENTRIES TO PROCESS:
-{batch_data}
-
-REQUIRED OUTPUT FIELDS:
-1. Payment Advice number - From global metadata
-2. Sendor mail - From global metadata
-3. Original sendor mail - From global metadata
-4. Vendor name (Payee name) - From global metadata
-5. Customer Name as per Payment advice - From global metadata
-6. Entry type - Must be one of: "Bank receipt dr", "BDPO dr", "Debit note dr", "TDS dr", "Invoice cr"
-7. Amount settled - Monetary value (preserve original sign)
-8. Other document number - For non-invoice entries
-9. Invoice number - Only for Invoice entries
-
-OUTPUT REQUIREMENTS:
-- STRICT JSON ARRAY WITH {entry_count} OBJECTS
-- ONE-TO-ONE MAPPING: Output[0] ↔ Input[0], Output[1] ↔ Input[1]
-- ENTRY COUNT VERIFICATION: len(output) MUST EQUAL {entry_count}
-
-PROCESSING RULES:
+ENTRY PROCESSING RULES:
 1. Entry Types:
-   - "Bank receipt dr": Contains "paid", "payment", "receipt", "bank", "UTR"
-   - "BDPO dr": Contains "BDPO", "BD-Coop", "marketing"
-   - "Debit note dr": Contains "debit", "damage", "return", "DN"
-   - "TDS dr": Contains "TDS", "tax", "deduction"
-   - "Invoice cr": Contains "INV", "invoice", "bill"
+   - "BDPO dr": For ANY entry containing 'bdpo', 'co-op', 'coop', 'BD-Coop', or 'marketing' (CRITICAL: Check both invoice number AND description fields)
+   - "TDS dr": For tax deduction entries (typically with -TDS- in the document number)
+   - "Debit note dr": For debits, returns, damage
+   - "Bank receipt dr": For payment entries (from metadata only)
+   - "Invoice cr": For all remaining invoice entries
 
-2. Document Numbers:
-   - Invoice entries: Use Invoice number, set Other document number to null
-   - Non-invoice entries: Use Other document number, set Invoice number to null
+2. Document Fields:
+   - Invoice entries → Use Invoice number field (Other document = null)
+   - All other types → Use Other document field (Invoice number = null)
 
-3. Amount Processing:
-   - Remove currency symbols and commas
-   - Preserve signs exactly as they appear
-   - Handle parentheses: (1000) = -1000
-   - dr entries typically positive
-   - cr entries typically negative
+3. Payment Entry (Create ONE if metadata has payment/UTR info):
+   - Entry type: 'Bank receipt dr'
+   - Amount: Positive value from metadata
+   - Other document number: Payment/UTR number
+   - Other fields from metadata
 
-OUTPUT FORMAT:
-[
-  {
-    "Payment Advice number": "337027030",
-    "Sendor mail": "accounts@example.com",
-    "Original sendor mail": "finance@example.com",
-    "Vendor name (Payee name)": "Vendor Ltd",
-    "Customer Name as per Payment advice": "Client Corp",
-    "Entry type": "Invoice cr",
-    "Amount settled": -5000.00,
-    "Other document number": null,
-    "Invoice number": "INV-001"
-  }
-]
+OUTPUT SCHEMA (for EACH entry):
+{
+  "Payment Advice number": "[From metadata]",
+  "Sendor mail": "[From metadata]",
+  "Original sendor mail": "[From metadata]",
+  "Vendor name (Payee name)": "[From metadata]",
+  "Customer Name as per Payment advice": "[From metadata]",
+  "Entry type": "[One of the 5 types]",
+  "Amount settled": number,
+  "Other document number": "[For non-invoice entries]",
+  "Invoice number": "[Only for Invoice entries]"
+}
 
-CRITICAL CHECKS:
-1. Output MUST have exactly {entry_count} items
-2. Every item MUST have all 9 fields
-3. Document numbers MUST match entry type
-4. JSON MUST be valid
+Response Format: JSON array containing {entry_count} objects (plus optional payment entry)
+
+FINAL CHECK:
+- Array length should be {entry_count} or {entry_count}+1 if payment entry was added
+- Each object must have all 9 fields (null for missing values)
+- JSON must be valid
 """
     
     # Fill in prompt template
@@ -530,19 +517,26 @@ CRITICAL CHECKS:
             if isinstance(normalized_batch, dict):
                 normalized_batch = [normalized_batch]
             
-            # Verify entry count
-            if len(normalized_batch) != entry_count:
-                logging.warning(f"Entry count mismatch. Expected: {entry_count}, Got: {len(normalized_batch)}")
+            # Verify entry count - now allowing for an additional payment entry
+            allowed_counts = [entry_count, entry_count + 1]  # Allow exact count or +1 for payment entry
+            if len(normalized_batch) not in allowed_counts:
+                logging.warning(f"Expected {entry_count} or {entry_count+1} entries but received {len(normalized_batch)} entries from LLM")
                 
-                # If the result is in a single-object wrapper with result field, try to unwrap it
-                # This handles cases where LLM wraps the array in a single-item object with 'result' field
-                # that contains the actual array
-                if len(normalized_batch) == 1 and isinstance(normalized_batch[0], dict) and 'result' in normalized_batch[0]:
-                    if isinstance(normalized_batch[0]['result'], list):
-                        logging.info(f"Found nested array in 'result' field with {len(normalized_batch[0]['result'])} items")
-                        normalized_batch = normalized_batch[0]['result']
+                # Check if the last entry is a payment entry
+                has_payment_entry = False
+                if len(normalized_batch) > 0:
+                    last_entry = normalized_batch[-1]
+                    if isinstance(last_entry, dict) and last_entry.get('Entry type') == 'Bank receipt dr':
+                        logging.info("Found payment entry as the last item")
+                        has_payment_entry = True
+            
+                if not has_payment_entry and len(normalized_batch) != entry_count:
+                    logging.warning(f"Entry count issue: Expected {entry_count} entries or {entry_count+1} with payment, got {len(normalized_batch)}")
                         
-                # Save problematic response for debugging
+                # Log warning only if we still don't have the right count after unwrapping
+                if len(normalized_batch) not in allowed_counts:
+                    logging.warning(f"After unwrapping, still have count mismatch. Got: {len(normalized_batch)}")
+                        
                 debug_file = f"debug_llm_response_{time.strftime('%Y%m%d_%H%M%S')}.json"
                 with open(debug_file, 'w') as f:
                     json.dump({

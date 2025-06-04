@@ -5,10 +5,10 @@
     "Original sendor mail": null,
     "Vendor name (Payee name)": "KWICK LIVING (I) PRIVATE LIMITED(1MC3G)",
     "Customer Name as per Payment advice": "KWICK LIVING (I) PRIVATE LIMITED(1MC3G)",
-    "Entry type": "Invoice cr",
+    "Entry type": "BDPO dr",
     "Amount settled": -4525368.88,
-    "Other document number": null,
-    "Invoice number": "26401351104458"
+    "Other document number": "Co-op-89352290-26401351104458",
+    "Invoice number": null
   },
   {
     "Payment Advice number": "337027030",
@@ -18,8 +18,8 @@
     "Customer Name as per Payment advice": "KWICK LIVING (I) PRIVATE LIMITED(1MC3G)",
     "Entry type": "TDS dr",
     "Amount settled": -194.22,
-    "Other document number": null,
-    "Invoice number": "B2B2526/1112167-TDS-CM-3164"
+    "Other document number": "B2B2526/1112167- TDS-CM-3164",
+    "Invoice number": null
   },
   {
     "Payment Advice number": "337027030",
@@ -29,8 +29,8 @@
     "Customer Name as per Payment advice": "KWICK LIVING (I) PRIVATE LIMITED(1MC3G)",
     "Entry type": "TDS dr",
     "Amount settled": -55.01,
-    "Other document number": null,
-    "Invoice number": "B2B2526/1112168-TDS-CM-6943"
+    "Other document number": "B2B2526/1112168- TDS-CM-6943",
+    "Invoice number": null
   },
   {
     "Payment Advice number": "337027030",
@@ -40,8 +40,8 @@
     "Customer Name as per Payment advice": "KWICK LIVING (I) PRIVATE LIMITED(1MC3G)",
     "Entry type": "TDS dr",
     "Amount settled": -139.77,
-    "Other document number": null,
-    "Invoice number": "B2B2526/1112174-TDS-CM-3143"
+    "Other document number": "B2B2526/1112174- TDS-CM-3143",
+    "Invoice number": null
   },
   {
     "Payment Advice number": "337027030",
@@ -51,8 +51,8 @@
     "Customer Name as per Payment advice": "KWICK LIVING (I) PRIVATE LIMITED(1MC3G)",
     "Entry type": "TDS dr",
     "Amount settled": -371.27,
-    "Other document number": null,
-    "Invoice number": "B2B2526/1112276-TDS-CM-7887"
+    "Other document number": "B2B2526/1112276- TDS-CM-7887",
+    "Invoice number": null
   },
   {
     "Payment Advice number": "337027030",
@@ -62,8 +62,8 @@
     "Customer Name as per Payment advice": "KWICK LIVING (I) PRIVATE LIMITED(1MC3G)",
     "Entry type": "TDS dr",
     "Amount settled": -14.85,
-    "Other document number": null,
-    "Invoice number": "B2B2526/1112277-TDS-CM-1313"
+    "Other document number": "B2B2526/1112277- TDS-CM-1313",
+    "Invoice number": null
   },
   {
     "Payment Advice number": "337027030",
@@ -84,8 +84,8 @@
     "Customer Name as per Payment advice": "KWICK LIVING (I) PRIVATE LIMITED(1MC3G)",
     "Entry type": "TDS dr",
     "Amount settled": -646.46,
-    "Other document number": null,
-    "Invoice number": "B2B2526/1112344-TDS-CM-3812"
+    "Other document number": "B2B2526/1112344- TDS-CM-3812",
+    "Invoice number": null
   },
   {
     "Payment Advice number": "337027030",
@@ -106,8 +106,8 @@
     "Customer Name as per Payment advice": "KWICK LIVING (I) PRIVATE LIMITED(1MC3G)",
     "Entry type": "TDS dr",
     "Amount settled": -628.8,
-    "Other document number": null,
-    "Invoice number": "B2B2526/1112417-TDS-CM-8603"
+    "Other document number": "B2B2526/1112417- TDS-CM-8603",
+    "Invoice number": null
   },
   {
     "Payment Advice number": "337027030",
@@ -128,7 +128,7 @@
     "Customer Name as per Payment advice": "KWICK LIVING (I) PRIVATE LIMITED(1MC3G)",
     "Entry type": "TDS dr",
     "Amount settled": -646.46,
-    "Other document number": "B2B2526/1112457-TDS-CM-8761",
+    "Other document number": "B2B2526/1112457- TDS-CM-8761",
     "Invoice number": null
   },
   {
@@ -150,7 +150,7 @@
     "Customer Name as per Payment advice": "KWICK LIVING (I) PRIVATE LIMITED(1MC3G)",
     "Entry type": "TDS dr",
     "Amount settled": -810.79,
-    "Other document number": "B2B2526/1112484-TDS-CM-8894",
+    "Other document number": "B2B2526/1112484- TDS-CM-8894",
     "Invoice number": null
   },
   {
@@ -172,7 +172,7 @@
     "Customer Name as per Payment advice": "KWICK LIVING (I) PRIVATE LIMITED(1MC3G)",
     "Entry type": "TDS dr",
     "Amount settled": -1219.95,
-    "Other document number": "B2B2526/1112508-TDS-CM-2389",
+    "Other document number": "B2B2526/1112508- TDS-CM-2389",
     "Invoice number": null
   },
   {
@@ -194,7 +194,7 @@
     "Customer Name as per Payment advice": "KWICK LIVING (I) PRIVATE LIMITED(1MC3G)",
     "Entry type": "TDS dr",
     "Amount settled": -81.6,
-    "Other document number": "B2B2526/1112534-TDS-CM-9097",
+    "Other document number": "B2B2526/1112534- TDS-CM-9097",
     "Invoice number": null
   },
   {
@@ -216,7 +216,7 @@
     "Customer Name as per Payment advice": "KWICK LIVING (I) PRIVATE LIMITED(1MC3G)",
     "Entry type": "TDS dr",
     "Amount settled": -56.18,
-    "Other document number": "B2B2526/1112548-TDS-CM-9521",
+    "Other document number": "B2B2526/1112548- TDS-CM-9521",
     "Invoice number": null
   },
   {
@@ -238,8 +238,8 @@
     "Customer Name as per Payment advice": "KWICK LIVING (I) PRIVATE LIMITED(1MC3G)",
     "Entry type": "TDS dr",
     "Amount settled": -652.21,
-    "Other document number": "B2B2526/1112627-TDS-CM-9274",
-    "Invoice number": null
+    "Other document number": null,
+    "Invoice number": "B2B2526/1112627- TDS-CM-9274"
   },
   {
     "Payment Advice number": "337027030",
@@ -260,8 +260,8 @@
     "Customer Name as per Payment advice": "KWICK LIVING (I) PRIVATE LIMITED(1MC3G)",
     "Entry type": "TDS dr",
     "Amount settled": -620.18,
-    "Other document number": "B2B2526/1112665-TDS-CM-6690",
-    "Invoice number": null
+    "Other document number": null,
+    "Invoice number": "B2B2526/1112665- TDS-CM-6690"
   },
   {
     "Payment Advice number": "337027030",
@@ -282,8 +282,8 @@
     "Customer Name as per Payment advice": "KWICK LIVING (I) PRIVATE LIMITED(1MC3G)",
     "Entry type": "TDS dr",
     "Amount settled": -40.21,
-    "Other document number": "B2B2526/1112668-TDS-CM-9664",
-    "Invoice number": null
+    "Other document number": null,
+    "Invoice number": "B2B2526/1112668- TDS-CM-9664"
   },
   {
     "Payment Advice number": "337027030",
@@ -304,8 +304,8 @@
     "Customer Name as per Payment advice": "KWICK LIVING (I) PRIVATE LIMITED(1MC3G)",
     "Entry type": "TDS dr",
     "Amount settled": -56.61,
-    "Other document number": "B2B2526/1112683-TDS-CM-9938",
-    "Invoice number": null
+    "Other document number": null,
+    "Invoice number": "B2B2526/1112683- TDS-CM-9938"
   },
   {
     "Payment Advice number": "337027030",
@@ -326,8 +326,8 @@
     "Customer Name as per Payment advice": "KWICK LIVING (I) PRIVATE LIMITED(1MC3G)",
     "Entry type": "TDS dr",
     "Amount settled": -34.68,
-    "Other document number": "B2B2526/1112686-TDS-CM-9669",
-    "Invoice number": null
+    "Other document number": null,
+    "Invoice number": "B2B2526/1112686- TDS-CM-9669"
   },
   {
     "Payment Advice number": "337027030",
@@ -349,7 +349,7 @@
     "Entry type": "TDS dr",
     "Amount settled": -254.93,
     "Other document number": null,
-    "Invoice number": "B2B2526/1112687-TDS-CM-6836"
+    "Invoice number": "B2B2526/1112687- TDS-CM-6836"
   },
   {
     "Payment Advice number": "337027030",
@@ -371,7 +371,7 @@
     "Entry type": "TDS dr",
     "Amount settled": -507.4,
     "Other document number": null,
-    "Invoice number": "B2B2526/1112690-TDS-CM-2451"
+    "Invoice number": "B2B2526/1112690- TDS-CM-2451"
   },
   {
     "Payment Advice number": "337027030",
@@ -393,7 +393,7 @@
     "Entry type": "TDS dr",
     "Amount settled": -567.7,
     "Other document number": null,
-    "Invoice number": "B2B2526/1112692-TDS-CM-9218"
+    "Invoice number": "B2B2526/1112692- TDS-CM-9218"
   },
   {
     "Payment Advice number": "337027030",
@@ -404,7 +404,7 @@
     "Entry type": "Debit note dr",
     "Amount settled": -1732.5,
     "Other document number": null,
-    "Invoice number": "KWIGM-BLR5-L-1771"
+    "Invoice number": "KWIGM- BLR5-L-1771"
   },
   {
     "Payment Advice number": "337027030",
@@ -415,6 +415,6 @@
     "Entry type": "Debit note dr",
     "Amount settled": -3068.45,
     "Other document number": null,
-    "Invoice number": "KWIGM-CJB1-L-85"
+    "Invoice number": "KWIGM- CJB1-L-85"
   }
 ]
