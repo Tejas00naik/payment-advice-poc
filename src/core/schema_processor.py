@@ -55,16 +55,19 @@ def create_final_df(llm_items: List[Dict[str, Any]], metadata: Dict[str, str]) -
     
     # Date formatting
     for date_col in ["Payment date", "Invoice date"]:
-        if date_col in df.columns:
-            # Try multiple date formats
-            for date_format in ["%d-%m-%Y", "%d/%m/%Y", "%Y-%m-%d", "%m/%d/%Y"]:
-                try:
-                    df[date_col] = pd.to_datetime(df[date_col], format=date_format, errors="coerce")
-                    # If we have some successful conversions, break
-                    if df[date_col].notna().any():
-                        break
-                except:
-                    continue
+        if date_col in df.columns and df[date_col].notna().any():
+            # Attempt to convert the column to datetime, specifying a common format.
+            # errors='coerce' will turn unparseable dates into NaT.
+            # LLM is prompted for YYYY-MM-DD for Invoice Date.
+            df[date_col] = pd.to_datetime(df[date_col], format='%Y-%m-%d', errors='coerce')
+            # If parsing with specific format fails for all and there was data, log it.
+            # This check helps if the primary format assumption is wrong for a particular file.
+            if df[date_col].isna().all() and df[date_col].notna().any():
+                 logging.warning(f"All values in date column '{date_col}' became NaT after parsing with format '%Y-%m-%d'. Trying with infer_datetime_format.")
+                 # Fallback to inferring if the primary format fails for all entries
+                 df[date_col] = pd.to_datetime(df[date_col], infer_datetime_format=True, errors='coerce')
+                 if df[date_col].isna().all() and df[date_col].notna().any():
+                    logging.error(f"All values in date column '{date_col}' still NaT after inferring format. Original data: {df[date_col].unique()[:5]}")
     
     # Ensure we only have the columns we want, in the right order
     return df[FINAL_COLUMNS]

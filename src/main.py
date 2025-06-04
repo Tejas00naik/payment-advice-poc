@@ -12,17 +12,13 @@ from dotenv import load_dotenv
 from typing import List, Optional, Dict, Any
 import signal
 
-# Import the core modules with proper handling for different import methods
-try:
-    # When run as a module
-    from .core.pdf_processor import extract_pdf_data, extract_metadata
-    from .core.llm_processor import extract_table_structure, normalize_extracted_data
-    from .core.schema_processor import FINAL_COLUMNS, create_final_df
-except ImportError:
-    # When run directly
-    from src.core.pdf_processor import extract_pdf_data, extract_metadata
-    from src.core.llm_processor import extract_table_structure, normalize_extracted_data
-    from src.core.schema_processor import FINAL_COLUMNS, create_final_df
+# Add the project root to sys.path to make imports work correctly
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# Import the core modules
+from core.pdf_processor import extract_pdf_data, extract_metadata
+from core.llm_processor import extract_table_structure, normalize_extracted_data
+from core.schema_processor import FINAL_COLUMNS, create_final_df
 
 # Load environment variables
 load_dotenv()
@@ -139,8 +135,14 @@ def process_single_file(file_path: str, timeout: int = 300) -> pd.DataFrame:
             json.dump(normalized_items, f, indent=2)
         logger.info("Normalized items saved to normalized_items.json")
         
+        # Ensure normalized_items is a list of dictionaries
+        if isinstance(normalized_items, dict):
+            # If we got a single invoice as a dictionary, wrap it in a list
+            normalized_items = [normalized_items]
+            logger.info("Converted single dictionary to list for DataFrame creation")
+        
         # Create DataFrame with final schema
-        df = create_final_df(normalized_items, {})
+        df = create_final_df(normalized_items, metadata)
         logger.info(f"Successfully extracted {len(df)} records")
         return df
         

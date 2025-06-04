@@ -86,7 +86,7 @@ class LLMFactory:
         elif provider == LLMProvider.OPENAI:
             # Default model for OpenAI
             if model_name is None:
-                model_name = "gpt-3.5-turbo"
+                model_name = "gpt-4.1-mini"
                 
             # Get OpenAI API key
             api_key = os.getenv("OPENAI_API_KEY")
@@ -116,10 +116,10 @@ class LLMFactory:
         Returns:
             LLMProvider enum value
         """
-        if os.getenv("DEEPSEEK_API_KEY"):
-            return LLMProvider.DEEPSEEK
-        elif os.getenv("OPENAI_API_KEY"):
+        if os.getenv("OPENAI_API_KEY"):
             return LLMProvider.OPENAI
+        elif os.getenv("DEEPSEEK_API_KEY"):
+            return LLMProvider.DEEPSEEK
         else:
             # Default to OpenAI, but it will fail without API key
             return LLMProvider.OPENAI
