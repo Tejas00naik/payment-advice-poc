@@ -72,6 +72,10 @@ def main():
     # Start timing
     table_start_time = time.time()
     
+    # Save raw text for debugging
+    with open(results_dir / "input_text.txt", "w", encoding="utf-8") as f:
+        f.write(text_data)
+    
     # Extract table structure
     table_data = extract_table_structure(text_data)
     
@@ -79,9 +83,14 @@ def main():
     table_time = time.time() - table_start_time
     logger.info(f"Table extraction completed in {table_time:.2f} seconds")
     
-    # Save table data
+    # Save table data with metadata
     with open(results_dir / "extracted_structure.json", "w", encoding="utf-8") as f:
-        json.dump(table_data, f, indent=2)
+        json.dump({
+            "metadata": metadata,
+            "table_data": table_data,
+            "extraction_time": table_time,
+            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
+        }, f, indent=2)
     logger.info(f"Table structure saved to {results_dir / 'extracted_structure.json'}")
     
     # Step 4: Normalize extracted data
@@ -89,6 +98,9 @@ def main():
     normalize_start_time = time.time()
     normalized_items = normalize_extracted_data(table_data)
     normalize_time = time.time() - normalize_start_time
+    
+    # Calculate total time
+    total_time = pdf_time + table_time + normalize_time
     logger.info(f"Normalization completed in {normalize_time:.2f} seconds")
     
     # Save normalized data
@@ -118,6 +130,24 @@ def main():
         with open(results_dir / "final_data.json", "w", encoding="utf-8") as f:
             json.dump(json_data, f, indent=2)
             
+        # Create comprehensive processing log
+        log_path = results_dir / "processing_summary.log"
+        with open(log_path, "w") as log_file:
+            log_file.write(f"PDF Processing Summary\n{'='*50}\n")
+            log_file.write(f"PDF: {pdf_path}\n")
+            log_file.write(f"Processing time: {total_time:.2f} seconds\n")
+            log_file.write(f"Extracted entries: {len(df)}\n\n")
+            log_file.write("Timing Breakdown:\n")
+            log_file.write(f"- PDF extraction: {pdf_time:.2f}s\n")
+            log_file.write(f"- Table extraction: {table_time:.2f}s\n")
+            log_file.write(f"- Normalization: {normalize_time:.2f}s\n\n")
+            log_file.write("Data Statistics:\n")
+            log_file.write(f"- Total entries: {len(df)}\n")
+            log_file.write(f"- Entry types: {df['Entry type'].value_counts().to_string()}\n")
+            log_file.write(f"- Null values: {df.isnull().sum().to_string()}\n\n")
+            log_file.write("First 5 entries:\n")
+            log_file.write(df.head().to_string())
+        
         # Print summary
         total_time = pdf_time + table_time + normalize_time
         print("\n========== OpenAI GPT-4.1-mini Extraction Results ==========")
@@ -129,6 +159,7 @@ def main():
         print(f"\nSample data (first {min(5, len(df))} records):")
         print(df.head().to_string())
         print("\nAll intermediate data and results saved to:", results_dir)
+        print(f"Full processing log saved to: {log_path}")
     else:
         logger.warning("No data was extracted")
         print("No data was extracted from the PDF.")
